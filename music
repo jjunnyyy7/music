@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎵 Music Visualizer - Cari & Putar Lagu</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    color: #fff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  #visualizer { position: fixed; inset: 0; z-index: 1; }
+
+  /* ====== PLAYER ====== */
+  #playerWrap {
+    position: fixed; z-index: 5;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(90vw, 900px);
+    aspect-ratio: 16/9;
+    background: #000;
+    border-radius: 16px;
+    box-shadow: 0 0 60px rgba(30,215,96,.35), 0 0 120px rgba(255,0,80,.2);
+    transition: opacity .5s, transform .5s;
+    overflow: hidden;
+  }
+  #playerWrap.hidden { opacity: 0; transform: translate(-50%,-50%) scale(.8); pointer-events: none; }
+  #playerWrap iframe { width: 100%; height: 100%; border: none; }
+
+  /* ====== TOP BAR ====== */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    display: flex; gap: 10px; padding: 14px 18px; align-items: center;
+    background: linear-gradient(#000c, transparent);
+    transition: opacity .4s; flex-wrap: wrap;
+  }
+  #topbar.hide { opacity: 0; pointer-events: none; }
+
+  .tab {
+    padding: 9px 18px; border-radius: 999px;
+    border: 1px solid #ffffff33; background: #ffffff10;
+    color: #ddd; cursor: pointer; font-size: 14px; font-weight: 600;
+    transition: .25s; backdrop-filter: blur(8px);
+  }
+  .tab:hover { background: #ffffff25; color: #fff; }
+  .tab.active { background: linear-gradient(135deg,#1ed760,#ff0055); color:#fff; border-color: transparent; }
+
+  #urlInput, #searchInput {
+    flex: 1; min-width: 220px; max-width: 520px;
+    padding: 10px 16px; border-radius: 999px;
+    border: 1px solid #ffffff33; background: #ffffff10;
+    color: #fff; font-size: 14px; outline: none; backdrop-filter: blur(8px);
+  }
+  #urlInput::placeholder, #searchInput::placeholder { color: #888; }
+
+  .btn {
+    padding: 9px 18px; border-radius: 999px; border: none;
+    background: linear-gradient(135deg,#1ed760,#0dbf5a);
+    color: #fff; font-weight: 700; cursor: pointer; transition: .25s;
+  }
+  .btn:hover { transform: scale(1.06); box-shadow: 0 0 20px #1ed76088; }
+  .btn.pink { background: linear-gradient(135deg,#ff0055,#ff5588); }
+  .btn.ghost { background:#ffffff15; border:1px solid #ffffff33; }
+
+  /* ====== PANEL HASIL PENCARIAN ====== */
+  #searchPanel {
+    position: fixed; z-index: 15;
+    top: 74px; left: 50%; transform: translateX(-50%);
+    width: min(94vw, 1000px); max-height: calc(100vh - 160px);
+    overflow-y: auto;
+    background: #0d0d14ee; border: 1px solid #ffffff22;
+    border-radius: 16px; padding: 16px;
+    backdrop-filter: blur(14px);
+    display: none;
+  }
+  #searchPanel.show { display: block; }
+  #searchPanel h3 { margin-bottom: 12px; color: #1ed760; font-size: 15px; }
+
+  .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+
+  .card {
+    display: flex; gap: 12px; align-items: center;
+    background: #ffffff0d; border: 1px solid #ffffff1a;
+    border-radius: 12px; padding: 10px; transition: .25s;
+  }
+  .card:hover { background: #ffffff1a; transform: translateY(-2px); }
+  .card img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+  .card .meta { flex: 1; min-width: 0; }
+  .card .title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .artist { font-size: 12px; color: #1ed760; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .album { font-size: 11px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .mini {
+    font-size: 11px; padding: 4px 10px; border-radius: 999px; border: none;
+    cursor: pointer; font-weight: 700; text-decoration: none; display: inline-block;
+  }
+  .mini.play { background: #1ed760; color: #000; }
+  .mini.play.playing { background: #ff0055; color: #fff; }
+  .mini.yt { background: #ff0000; color: #fff; }
+  .mini.sp { background: #1db954; color: #000; }
+
+  #loading { text-align: center; color: #888; padding: 20px; display: none; }
+
+  /* ====== INFO BAWAH ====== */
+  #info {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+    padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(transparent, #000d); transition: opacity .4s;
+  }
+  #info.hide { opacity: 0; pointer-events: none; }
+  #status { font-size: 13px; color: #aaa; }
+  #nowPlaying { font-size: 15px; font-weight: 700; color: #1ed760; }
+  #progressBar {
+    position: absolute; bottom: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg,#1ed760,#ff0055);
+    box-shadow: 0 0 12px #1ed760;
+  }
+
+  #hint {
+    position: fixed; z-index: 20; bottom: 60px; left: 50%; transform: translateX(-50%);
+    color: #666; font-size: 12px; text-align: center; transition: opacity .4s;
+  }
+
+  #fileInput { display: none; }
+  label.btn { display: inline-block; }
+
+  /* cover album besar saat preview diputar */
+  #bigCover {
+    position: fixed; z-index: 3;
+    top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: min(50vw, 420px); height: min(50vw, 420px);
+    border-radius: 20px; object-fit: cover;
+    box-shadow: 0 0 80px rgba(30,215,96,.4);
+    display: none; pointer-events: none;
+  }
+  #bigCover.show { display: block; animation: spin 20s linear infinite; }
+  @keyframes spin { to { transform: translate(-50%,-50%) rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<canvas id="visualizer"></canvas>
+<img id="bigCover" alt="">
+
+<div id="playerWrap" class="hidden"><div id="ytPlayer"></div></div>
+
+<div id="topbar">
+  <button class="tab active" data-mode="search">🔍 Cari Lagu</button>
+  <button class="tab" data-mode="youtube">▶ YouTube</button>
+  <button class="tab" data-mode="spotify">🎵 Spotify</button>
+  <button class="tab" data-mode="local">💾 File Lokal</button>
+  <input id="searchInput" placeholder="Ketik judul lagu / nama artis, lalu Enter... (misal: Lathi)" style="display:none">
+  <input id="urlInput" placeholder="Tempel URL YouTube/Spotify di sini..." style="display:none">
+  <button class="btn" id="playBtn">Putar</button>
+  <button class="btn pink" id="stopBtn">Stop</button>
+  <button class="btn ghost" id="fsBtn">⛶ Fullscreen</button>
+</div>
+
+<div id="searchPanel">
+  <h3>🔎 Hasil Pencarian — klik ▶ untuk preview 30 detik dengan visualizer asli</h3>
+  <div id="loading">⏳ Mencari lagu...</div>
+  <div class="results" id="results"></div>
+</div>
+
+<div id="hint">Tekan <b>H</b> sembunyikan kontrol &nbsp;•&nbsp; <b>F</b> = Fullscreen &nbsp;•&nbsp; <b>Esc</b> keluar</div>
+
+<div id="info">
+  <span id="nowPlaying">Belum ada lagu</span>
+  <span id="status">Cari lagu by judul, atau tempel link YouTube/Spotify</span>
+  <div id="progressBar"></div>
+</div>
+
+<input type="file" id="fileInput" accept="audio/*">
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+/* ================================================================
+   STATE
+================================================================ */
+let mode = 'search';
+let ytPlayer = null, ytReady = false, pendingYtId = null;
+let audioCtx = null, analyser = null, dataArray = null, sourceNode = null;
+let currentAudio = null;   // audio lokal / preview itunes
+let playing = false;
+let startTime = 0, duration = 0;
+let trackTitle = 'Belum ada lagu';
+
+/* ================================================================
+   YOUTUBE IFRAME API
+================================================================ */
+function onYouTubeIframeAPIReady() {
+  ytPlayer = new YT.Player('ytPlayer', {
+    height: '100%', width: '100%',
+    playerVars: { playsinline: 1 },
+    events: {
+      onReady: () => { ytReady = true; if (pendingYtId) loadYouTube(pendingYtId); },
+      onStateChange: (e) => {
+        if (e.data === YT.PlayerState.PLAYING) {
+          playing = true; startTime = Date.now();
+          duration = ytPlayer.getDuration() * 1000;
+          trackTitle = ytPlayer.getVideoData().title || 'YouTube';
+          setNow('▶ Memutar: ');
+          showPlayer(true);
+        } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
+          playing = false; setNow('⏸ Jeda — ');
+        }
+      }
+    }
+  });
+}
+
+function getYtId(url) {
+  const m = url.match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+function loadYouTube(id) {
+  showPlayer(true);
+  if (ytReady) ytPlayer.loadVideoById(id); else pendingYtId = id;
+}
+
+/* ================================================================
+   SPOTIFY EMBED
+================================================================ */
+function loadSpotify(url) {
+  const m = url.match(/spotify\.com\/(track|album|playlist|episode)\/(\w+)/);
+  if (!m) { alert('Link Spotify tidak valid! Gunakan Share > Copy link.'); return; }
+  showPlayer(true);
+  document.getElementById('playerWrap').innerHTML =
+    `<iframe src="https://open.spotify.com/embed/${m[1]}/${m[2]}"
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+  playing = true; startTime = Date.now(); duration = 210000;
+  trackTitle = 'Spotify • ' + m[1];
+  setNow('▶ ');
+}
+
+/* ================================================================
+   🔍 PENCARIAN LAGU (iTunes Search API — gratis, tanpa API key)
+================================================================ */
+async function searchSongs(query) {
+  const panel = document.getElementById('searchPanel');
+  const box = document.getElementById('results');
+  const loading = document.getElementById('loading');
+  panel.classList.add('show');
+  box.innerHTML = '';
+  loading.style.display = 'block';
+  try {
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=20`;
+    const res = await fetch(url);
+    const data = await res.json();
+    loading.style.display = 'none';
+    if (!data.results.length) {
+      box.innerHTML = '<p style="color:#888;grid-column:1/-1">❌ Tidak ada hasil. Coba kata kunci lain.</p>';
+      return;
+    }
+    box.innerHTML = data.results.map((s, i) => `
+      <div class="card">
+        <img src="${s.artworkUrl100.replace('100x100','200x200')}" alt="">
+        <div class="meta">
+          <div class="title">${esc(s.trackName)}</div>
+          <div class="artist">${esc(s.artistName)}</div>
+          <div class="album">${esc(s.collectionName || '')}</div>
+          <div class="actions">
+            <button class="mini play" data-i="${i}">▶ Preview</button>
+            <a class="mini yt" target="_blank"
+               href="https://www.youtube.com/results?search_query=${encodeURIComponent(s.artistName + ' ' + s.trackName)}">▶ YouTube</a>
+            <a class="mini sp" target="_blank"
+               href="https://open.spotify.com/search/${encodeURIComponent(s.artistName + ' ' + s.trackName)}">🎵 Spotify</a>
+          </div>
+        </div>
+      </div>`).join('');
+    window._searchResults = data.results;
+    // pasang event tombol preview
+    box.querySelectorAll('.mini.play').forEach(btn => {
+      btn.onclick = () => playPreview(parseInt(btn.dataset.i), btn);
+    });
+  } catch (err) {
+    loading.style.display = 'none';
+    box.innerHTML = '<p style="color:#f66;grid-column:1/-1">⚠️ Gagal mencari. Periksa koneksi internet.</p>';
+  }
+}
+
+function esc(s){ const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+/* ====== putar preview 30 detik + ANALIZER ASLI ====== */
+function playPreview(i, btn) {
+  const s = window._searchResults[i];
+  if (!s || !s.previewUrl) { alert('Preview tidak tersedia untuk lagu ini.'); return; }
+
+  stopAll();
+
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioCtx.resume();
+
+  if (!analyser) {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+  }
+
+  currentAudio = new Audio(s.previewUrl);
+  currentAudio.crossOrigin = 'anonymous';
+
+  sourceNode = audioCtx.createMediaElementSource(currentAudio);
+  sourceNode.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  currentAudio.play().catch(() => {
+    alert('Preview diblokir browser. Coba tombol YouTube/Spotify untuk versi penuh.');
+  });
+
+  playing = true;
+  duration = 30000;
+  startTime = Date.now();
+  trackTitle = s.trackName + ' — ' + s.artistName;
+  setNow('▶ Preview: ');
+  showPlayer(false);
+
+  // tampilkan cover album berputar
+  const cover = document.getElementById('bigCover');
+  cover.src = s.artworkUrl100.replace('100x100', '600x600');
+  cover.classList.add('show');
+
+  currentAudio.onended = () => {
+    playing = false;
+    cover.classList.remove('show');
+    setNow('✔ Selesai — ');
+    document.querySelectorAll('.mini.play').forEach(b => { b.textContent = '▶ Preview'; b.classList.remove('playing'); });
+  };
+
+  // tandai tombol aktif
+  document.querySelectorAll('.mini.play').forEach(b => { b.textContent = '▶ Preview'; b.classList.remove('playing'); });
+  btn.textContent = '⏸ Memutar...';
+  btn.classList.add('playing');
+}
+
+/* ================================================================
+   FILE LOKAL — ANALIZER ASLI
+================================================================ */
+function loadLocal(file) {
+  stopAll();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioCtx.resume();
+  if (!analyser) {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+  }
+  currentAudio = new Audio(URL.createObjectURL(file));
+  currentAudio.crossOrigin = 'anonymous';
+  sourceNode = audioCtx.createMediaElementSource(currentAudio);
+  sourceNode.connect(analyser);
+  analyser.connect(audioCtx.destination);
+  currentAudio.play();
+  playing = true;
+  duration = 0;
+  trackTitle = file.name.replace(/\.[^.]+$/, '');
+  setNow('▶ File lokal: ');
+  showPlayer(false);
+  currentAudio.onended = () => { playing = false; setNow('✔ Selesai — '); };
+  currentAudio.ontimeupdate = () => { duration = currentAudio.duration * 1000; };
+}
+
+/* ================================================================
+   KONTROL UMUM
+================================================================ */
+function stopAll() {
+  playing = false;
+  if (ytPlayer && ytReady) try { ytPlayer.stopVideo(); } catch(e){}
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  document.getElementById('bigCover').classList.remove('show');
+  document.querySelectorAll('.mini.play').forEach(b => { b.textContent = '▶ Preview'; b.classList.remove('playing'); });
+  setNow('⏹ Dihentikan — ');
+}
+
+function showPlayer(show) {
+  document.getElementById('playerWrap').classList.toggle('hidden', !show);
+  if (show) document.getElementById('bigCover').classList.remove('show');
+}
+
+function setNow(prefix) {
+  document.getElementById('nowPlaying').textContent = prefix + trackTitle;
+}
+
+/* ================================================================
+   EVENTS UI
+================================================================ */
+const urlInput = document.getElementById('urlInput');
+const searchInput = document.getElementById('searchInput');
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    mode = t.dataset.mode;
+    searchInput.style.display = mode === 'search' ? '' : 'none';
+    urlInput.style.display = (mode === 'youtube' || mode === 'spotify') ? '' : 'none';
+    document.getElementById('searchPanel').classList.toggle('show', mode === 'search' && document.getElementById('results').children.length > 0);
+    urlInput.placeholder = mode === 'youtube'
+      ? 'Tempel URL YouTube (contoh: https://youtube.com/watch?v=...)'
+      : 'Tempel link Spotify (contoh: https://open.spotify.com/track/...)';
+  };
+});
+
+document.getElementById('playBtn').onclick = () => {
+  if (mode === 'search') { doSearch(); return; }
+  if (mode === 'local') { document.getElementById('fileInput').click(); return; }
+  const url = urlInput.value.trim();
+  if (!url) { alert('Masukkan URL dulu ya!'); return; }
+  if (mode === 'youtube') {
+    const id = getYtId(url);
+    id ? loadYouTube(id) : alert('URL YouTube tidak valid!');
+  } else loadSpotify(url);
+};
+
+function doSearch() {
+  const q = searchInput.value.trim();
+  if (q) searchSongs(q);
+  else alert('Ketik judul lagu atau nama artis dulu!');
+}
+
+searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('playBtn').click(); });
+document.getElementById('stopBtn').onclick = stopAll;
+document.getElementById('fsBtn').onclick = () => {
+  document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+};
+document.getElementById('fileInput').onchange = e => { if (e.target.files[0]) loadLocal(e.target.files[0]); };
+
+/* klik di luar panel pencarian = tutup panel */
+document.addEventListener('click', e => {
+  const panel = document.getElementById('searchPanel');
+  if (panel.classList.contains('show') && !panel.contains(e.target) && !searchInput.contains(e.target) && !e.target.closest('.tab')) {
+    panel.classList.remove('show');
+  }
+});
+
+/* auto-hide kontrol */
+let hideTimer;
+function pokeUI() {
+  document.getElementById('topbar').classList.remove('hide');
+  document.getElementById('info').classList.remove('hide');
+  document.getElementById('hint').style.opacity = 1;
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    if (playing) {
+      document.getElementById('topbar').classList.add('hide');
+      document.getElementById('info').classList.add('hide');
+      document.getElementById('hint').style.opacity = 0;
+modelBuilder    }
+  }, 3500);
+}
+document.addEventListener('mousemove', pokeUI);
+pokeUI();
+
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'h') {
+    const h = document.getElementById('topbar').classList.toggle('hide');
+    document.getElementById('info').classList.toggle('hide', h);
+  } else if (e.key.toLowerCase() === 'f') {
+    document.getElementById('fsBtn').click();
+  }
+});
+
+/* ================================================================
+   VISUALIZER CANVAS
+================================================================ */
+const canvas = document.getElementById('visualizer');
+const ctx = canvas.getContext('2d');
+let W, H, t = 0;
+function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+addEventListener('resize', resize);
+resize();
+
+const BARS = 96;
+const bars = new Array(BARS).fill(0);
+
+function draw() {
+  t += 0.016;
+  requestAnimationFrame(draw);
+  ctx.fillStyle = 'rgba(10,10,15,0.28)';
+  ctx.fillRect(0, 0, W, H);
+
+  let levels;
+  if (analyser && playing && currentAudio) {
+    analyser.getByteFrequencyData(dataArray);
+    levels = Array.from({length: BARS}, (_, i) =>
+      dataArray[Math.floor(i / BARS * dataArray.length)] / 255
+    );
+  } else if (playing) {
+    levels = Array.from({length: BARS}, (_, i) => {
+      const x = i / BARS;
+      const beat = Math.pow(Math.abs(Math.sin(t * 3.2)), 2);
+      return Math.max(0,
+        Math.sin(x * 8 + t * 4) * 0.25 +
+        Math.sin(x * 21 - t * 7) * 0.18 +
+        Math.sin(x * 3 + t * 2) * 0.2 + 0.25
+      ) * (0.5 + beat * 0.9) * (1 - Math.abs(x - .5) * .8);
+    });
+  } else {
+    levels = new Array(BARS).fill(0.04 + Math.sin(t * 1.5) * 0.02);
+  }
+
+  for (let i = 0; i < BARS; i++) bars[i] += (levels[i] - bars[i]) * 0.25;
+
+  const cx = W / 2, cy = H / 2;
+  const baseR = Math.min(W, H) * 0.28;
+  const avg = bars.reduce((a, b) => a + b, 0) / BARS;
+
+  // lingkaran denyut
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.beginPath();
+  ctx.arc(0, 0, baseR * (0.92 + avg * 0.25), 0, Math.PI * 2);
+  ctx.strokeStyle = `hsla(${(t * 40) % 360}, 100%, 60%, ${0.25 + avg * 0.5})`;
+  ctx.lineWidth = 3 + avg * 6;
+  ctx.shadowBlur = 30; ctx.shadowColor = '#1ed760';
+  ctx.stroke();
+
+  // bars radial
+  for (let i = 0; i < BARS; i++) {
+    const ang = (i / BARS) * Math.PI * 2 - Math.PI / 2;
+    const len = bars[i] * Math.min(W, H) * 0.22;
+    const x1 = Math.cos(ang) * baseR, y1 = Math.sin(ang) * baseR;
+    const x2 = Math.cos(ang) * (baseR + len), y2 = Math.sin(ang) * (baseR + len);
+    const hue = (i / BARS * 300 + t * 50) % 360;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = `hsl(${hue}, 100%, ${45 + bars[i] * 30}%)`;
+    ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.shadowBlur = 15; ctx.shadowColor = `hsl(${hue}, 100%, 55%)`;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // gelombang bawah
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += 4) {
+    const idx = Math.floor(x / W * BARS);
+    const y = H - 30 - bars[idx] * H * 0.35 - Math.sin(x * 0.01 + t * 3) * 15 * (0.5 + avg);
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#1ed760'); grad.addColorStop(1, '#ff0055');
+  ctx.strokeStyle = grad; ctx.lineWidth = 2.5;
+  ctx.shadowBlur = 20; ctx.shadowColor = '#1ed760';
+  ctx.stroke();
+
+  // partikel
+  for (let i = 0; i < 20; i++) {
+    const px = (Math.sin(t * (0.3 + i * 0.05) + i) * 0.5 + 0.5) * W;
+    const py = H - ((t * 40 + i * 137) % H);
+    const s = 1 + bars[i % BARS] * 5;
+    ctx.beginPath(); ctx.arc(px, py, s, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${(i * 30 + t * 60) % 360}, 100%, 65%, ${0.3 + bars[i % BARS] * 0.6})`;
+    ctx.fill();
+  }
+
+  // progress
+  let pct = 0;
+  if (currentAudio && currentAudio.duration) pct = currentAudio.currentTime / currentAudio.duration * 100;
+  else if (playing && duration > 0) pct = Math.min(100, (Date.now() - startTime) / duration * 100);
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+draw();
+</script>
+</body>
+</html>
